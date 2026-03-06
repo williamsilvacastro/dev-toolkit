@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Comparador de JSON</title>
+  <style>
+    :root {
+      font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      color: #0f172a;
+      background: #f8fafc;
+    }
+
+    body {
+      margin: 0;
+      padding: 24px;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.6rem;
+    }
+
+    .inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    textarea {
+      min-height: 280px;
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      resize: vertical;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.9rem;
+      box-sizing: border-box;
+      background: #fff;
+    }
+
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .primary {
+      background: #0ea5e9;
+      color: white;
+    }
+
+    .secondary {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    .message {
+      padding: 12px;
+      border-radius: 8px;
+      display: none;
+    }
+
+    .message.error {
+      background: #fee2e2;
+      color: #991b1b;
+      display: block;
+    }
+
+    .message.success {
+      background: #dcfce7;
+      color: #166534;
+      display: block;
+    }
+
+    .result {
+      background: #fff;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      overflow: auto;
+      max-height: 450px;
+    }
+
+    .result table {
+      border-collapse: collapse;
+      width: 100%;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+    }
+
+    .result th,
+    .result td {
+      border-bottom: 1px solid #e2e8f0;
+      padding: 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .added {
+      background: #f0fdf4;
+    }
+
+    .removed {
+      background: #fef2f2;
+    }
+
+    .changed {
+      background: #eff6ff;
+    }
+
+    @media (max-width: 800px) {
+      .inputs {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Comparador de JSON</h1>
+    <p>Cole dois JSONs abaixo. Arrays são ordenados automaticamente pelo primeiro campo que contenha "id" no nome.</p>
+
+    <div class="inputs">
+      <div>
+        <label for="jsonA"><strong>JSON A</strong></label>
+        <textarea id="jsonA" placeholder='{"usuarios":[{"userId":2,"nome":"B"},{"userId":1,"nome":"A"}]}'></textarea>
+      </div>
+      <div>
+        <label for="jsonB"><strong>JSON B</strong></label>
+        <textarea id="jsonB" placeholder='{"usuarios":[{"userId":1,"nome":"Ana"},{"userId":2,"nome":"B"}]}'></textarea>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="compareBtn">Comparar</button>
+      <button class="secondary" id="exampleBtn">Carregar exemplo</button>
+      <button class="secondary" id="clearBtn">Limpar</button>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <div class="result">
+      <table>
+        <thead>
+          <tr>
+            <th>Tipo</th>
+            <th>Caminho</th>
+            <th>JSON A</th>
+            <th>JSON B</th>
+          </tr>
+        </thead>
+        <tbody id="diffBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const jsonA = document.getElementById('jsonA');
+    const jsonB = document.getElementById('jsonB');
+    const compareBtn = document.getElementById('compareBtn');
+    const exampleBtn = document.getElementById('exampleBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const message = document.getElementById('message');
+    const diffBody = document.getElementById('diffBody');
+
+    function showMessage(text, type) {
+      message.textContent = text;
+      message.className = `message ${type}`;
+    }
+
+    function clearMessage() {
+      message.textContent = '';
+      message.className = 'message';
+    }
+
+    function serialize(value) {
+      return typeof value === 'string' ? value : JSON.stringify(value);
+    }
+
+    function findIdKey(obj) {
+      return Object.keys(obj).find((k) => /id/i.test(k));
+    }
+
+    function sortArrayByIdField(arr) {
+      const objects = arr.filter((item) => item && typeof item === 'object' && !Array.isArray(item));
+      if (objects.length !== arr.length || arr.length === 0) return arr;
+
+      const firstObjWithId = objects.find((o) => findIdKey(o));
+      if (!firstObjWithId) return arr;
+
+      const idKey = findIdKey(firstObjWithId);
+      return [...arr].sort((a, b) => {
+        const av = a[idKey];
+        const bv = b[idKey];
+        if (av === undefined && bv === undefined) return 0;
+        if (av === undefined) return 1;
+        if (bv === undefined) return -1;
+
+        const aNum = Number(av);
+        const bNum = Number(bv);
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          return aNum - bNum;
+        }
+
+        return String(av).localeCompare(String(bv), 'pt-BR');
+      });
+    }
+
+    function normalize(value) {
+      if (Array.isArray(value)) {
+        return sortArrayByIdField(value).map(normalize);
+      }
+
+      if (value && typeof value === 'object') {
+        return Object.keys(value)
+          .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+          .reduce((acc, key) => {
+            acc[key] = normalize(value[key]);
+            return acc;
+          }, {});
+      }
+
+      return value;
+    }
+
+    function diffValues(a, b, path = '$') {
+      const diffs = [];
+
+      if (typeof a !== typeof b) {
+        diffs.push({ type: 'alterado', path, a, b, rowClass: 'changed' });
+        return diffs;
+      }
+
+      if (Array.isArray(a) && Array.isArray(b)) {
+        const max = Math.max(a.length, b.length);
+        for (let i = 0; i < max; i += 1) {
+          const nextPath = `${path}[${i}]`;
+          if (i >= a.length) {
+            diffs.push({ type: 'adicionado', path: nextPath, a: undefined, b: b[i], rowClass: 'added' });
+          } else if (i >= b.length) {
+            diffs.push({ type: 'removido', path: nextPath, a: a[i], b: undefined, rowClass: 'removed' });
+          } else {
+            diffs.push(...diffValues(a[i], b[i], nextPath));
+          }
+        }
+        return diffs;
+      }
+
+      if (a && b && typeof a === 'object') {
+        const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+        [...keys].sort((x, y) => x.localeCompare(y, 'pt-BR')).forEach((key) => {
+          const nextPath = `${path}.${key}`;
+          if (!(key in a)) {
+            diffs.push({ type: 'adicionado', path: nextPath, a: undefined, b: b[key], rowClass: 'added' });
+          } else if (!(key in b)) {
+            diffs.push({ type: 'removido', path: nextPath, a: a[key], b: undefined, rowClass: 'removed' });
+          } else {
+            diffs.push(...diffValues(a[key], b[key], nextPath));
+          }
+        });
+        return diffs;
+      }
+
+      if (a !== b) {
+        diffs.push({ type: 'alterado', path, a, b, rowClass: 'changed' });
+      }
+
+      return diffs;
+    }
+
+    function renderDiff(diffs) {
+      diffBody.innerHTML = '';
+      if (diffs.length === 0) {
+        diffBody.innerHTML = '<tr><td colspan="4">Nenhuma diferença encontrada.</td></tr>';
+        showMessage('Os JSONs são equivalentes após normalização.', 'success');
+        return;
+      }
+
+      diffs.forEach((item) => {
+        const tr = document.createElement('tr');
+        tr.className = item.rowClass;
+        tr.innerHTML = `
+          <td>${item.type}</td>
+          <td>${item.path}</td>
+          <td>${item.a === undefined ? '-' : serialize(item.a)}</td>
+          <td>${item.b === undefined ? '-' : serialize(item.b)}</td>
+        `;
+        diffBody.appendChild(tr);
+      });
+
+      showMessage(`Encontradas ${diffs.length} diferença(s).`, 'success');
+    }
+
+    compareBtn.addEventListener('click', () => {
+      clearMessage();
+      try {
+        const left = normalize(JSON.parse(jsonA.value));
+        const right = normalize(JSON.parse(jsonB.value));
+        const diffs = diffValues(left, right);
+        renderDiff(diffs);
+      } catch (error) {
+        showMessage(`Erro de JSON: ${error.message}`, 'error');
+      }
+    });
+
+    exampleBtn.addEventListener('click', () => {
+      jsonA.value = JSON.stringify({
+        usuarios: [
+          { userId: 2, nome: 'Bruno', perfil: { ativo: true } },
+          { userId: 1, nome: 'Ana', perfil: { ativo: true } }
+        ],
+        versao: 1
+      }, null, 2);
+
+      jsonB.value = JSON.stringify({
+        usuarios: [
+          { userId: 1, nome: 'Ana', perfil: { ativo: false } },
+          { userId: 2, nome: 'Bruno', perfil: { ativo: true } },
+          { userId: 3, nome: 'Carlos', perfil: { ativo: true } }
+        ],
+        versao: 2
+      }, null, 2);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      jsonA.value = '';
+      jsonB.value = '';
+      diffBody.innerHTML = '';
+      clearMessage();
+    });
+  </script>
+</body>
+</html>
