@@ -193,18 +193,56 @@
       return typeof value === 'string' ? value : JSON.stringify(value);
     }
 
-    function findIdKey(obj) {
-      return Object.keys(obj).find((k) => /id/i.test(k));
+    function isPrimitiveComparable(value) {
+      return value === null || ['string', 'number', 'boolean'].includes(typeof value);
+    }
+
+    function getSortKeyForObjectArray(arr) {
+      const keyStats = new Map();
+
+      arr.forEach((obj) => {
+        Object.entries(obj).forEach(([key, value]) => {
+          if (!isPrimitiveComparable(value)) return;
+
+          if (!keyStats.has(key)) {
+            keyStats.set(key, {
+              definedCount: 0,
+              nonNullCount: 0,
+              uniqueValues: new Set(),
+              idPriority: /id/i.test(key) ? 1 : 0
+            });
+          }
+
+          const stats = keyStats.get(key);
+          if (value !== undefined) {
+            stats.definedCount += 1;
+          }
+          if (value !== null && value !== undefined) {
+            stats.nonNullCount += 1;
+            stats.uniqueValues.add(String(value));
+          }
+        });
+      });
+
+      if (keyStats.size === 0) return null;
+
+      const rankedKeys = [...keyStats.entries()].sort(([, a], [, b]) => {
+        if (b.idPriority !== a.idPriority) return b.idPriority - a.idPriority;
+        if (b.nonNullCount !== a.nonNullCount) return b.nonNullCount - a.nonNullCount;
+        if (b.uniqueValues.size !== a.uniqueValues.size) return b.uniqueValues.size - a.uniqueValues.size;
+        return b.definedCount - a.definedCount;
+      });
+
+      return rankedKeys[0][0];
     }
 
     function sortArrayByIdField(arr) {
       const objects = arr.filter((item) => item && typeof item === 'object' && !Array.isArray(item));
       if (objects.length !== arr.length || arr.length === 0) return arr;
 
-      const firstObjWithId = objects.find((o) => findIdKey(o));
-      if (!firstObjWithId) return arr;
+      const idKey = getSortKeyForObjectArray(objects);
+      if (!idKey) return arr;
 
-      const idKey = findIdKey(firstObjWithId);
       return [...arr].sort((a, b) => {
         const av = a[idKey];
         const bv = b[idKey];
@@ -218,7 +256,10 @@
           return aNum - bNum;
         }
 
-        return String(av).localeCompare(String(bv), 'pt-BR');
+        const primary = String(av).localeCompare(String(bv), 'pt-BR');
+        if (primary !== 0) return primary;
+
+        return JSON.stringify(a).localeCompare(JSON.stringify(b), 'pt-BR');
       });
     }
 
